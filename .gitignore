@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Per-session instructions, not part of source
+prompt.txt
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

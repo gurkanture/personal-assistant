@@ -1,221 +1,216 @@
-import { useState, useEffect, useCallback } from 'react'
-import './App.css'
+import { useCallback, useEffect, useState } from 'react'
+import Header from './components/Header.jsx'
+import Footer from './components/Footer.jsx'
+import SettingsDrawer from './components/SettingsDrawer.jsx'
+import TextInput from './components/TextInput.jsx'
+import AnimatedRings from './components/AnimatedRings.jsx'
+import IdleMode from './modes/IdleMode.jsx'
+import ConversationMode from './modes/ConversationMode.jsx'
+import MusicMode from './modes/MusicMode.jsx'
+import TasksMode from './modes/TasksMode.jsx'
+import HistoryMode from './modes/HistoryMode.jsx'
+import { useElevenLabs, startCall } from './hooks/useElevenLabs.js'
+import { detectMusicRequest } from './music.js'
+import { api } from './api.js'
 
-const WORKER_URL = 'https://hena-api.gurkan-ture.workers.dev'
-const AGENT_ID   = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
+const AGENT_ID = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
 
-function Particles() {
-  return (
-    <div className="particles" aria-hidden>
-      {Array.from({ length: 18 }).map((_, i) => (
-        <div key={i} className="particle" style={{
-          left: `${Math.random() * 100}%`,
-          top:  `${55 + Math.random() * 45}%`,
-          animationDuration: `${4 + Math.random() * 6}s`,
-          animationDelay:    `${Math.random() * 8}s`,
-          width:  `${1 + Math.random() * 2}px`,
-          height: `${1 + Math.random() * 2}px`,
-        }} />
-      ))}
-    </div>
-  )
-}
+const CONVO_MODES = ['listening', 'speaking']
 
-function SettingsDrawer({ open, settings, onChange }) {
-  const sliders = [
-    { key: 'speed',      label: 'HIZ',       min: 70,  max: 120, display: v => (v/100).toFixed(1)+'×' },
-    { key: 'stability',  label: 'STABİLİTE', min: 30,  max: 100, display: v => (v/100).toFixed(2) },
-    { key: 'similarity', label: 'BENZERLİK', min: 50,  max: 100, display: v => (v/100).toFixed(2) },
-  ]
-  const voices = [
-    { value: '',                      label: '— Varsayılan —' },
-    { value: 'AmW3oHMmMm7pJX7z8Kj3', label: 'Amelia' },
-    { value: 'jsCqWAovK2LkecY7zXl4', label: 'Freya' },
-    { value: 'XB0fDUnXU5powFXDhCwa', label: 'Charlotte' },
-    { value: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah' },
-  ]
-  return (
-    <div className={`drawer ${open ? 'open' : ''}`}>
-      <div className="drawer-inner">
-        <div className="drawer-title">Ses Ayarları</div>
-        <div className="drawer-grid">
-          {sliders.map(s => (
-            <div className="ctrl-row" key={s.key}>
-              <span className="ctrl-label">{s.label}</span>
-              <input type="range" min={s.min} max={s.max} step="5"
-                value={settings[s.key]}
-                onChange={e => onChange(s.key, +e.target.value)} />
-              <span className="ctrl-value">{s.display(settings[s.key])}</span>
-            </div>
-          ))}
-          <div className="ctrl-row">
-            <span className="ctrl-label">SES</span>
-            <select value={settings.voice} onChange={e => onChange('voice', e.target.value)}>
-              {voices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
-            </select>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
+function buildMemoryPrompt(memories) {
+  if (!Array.isArray(memories) || memories.length === 0) return ''
+  const groups = { user_profile: [], agenda: [], topic: [], preference: [] }
+  for (const m of memories) {
+    if (groups[m.category]) groups[m.category].push(m)
+  }
+  let p = '\n\n=== HAFIZA ==='
+  if (groups.user_profile.length)
+    p += '\nKullanıcı: ' + groups.user_profile.map(m => `${m.key}=${m.summary}`).join(', ')
+  if (groups.preference.length)
+    p += '\nTercihler: ' + groups.preference.map(m => `${m.key}=${m.summary}`).join(', ')
+  if (groups.agenda.length) {
+    p += '\nAktif Gündem:'
+    groups.agenda.forEach(m => (p += `\n- ${m.summary}`))
+  }
+  if (groups.topic.length) {
+    p += '\nTakip Edilen:'
+    groups.topic.forEach(m => (p += `\n- ${m.key}: ${m.summary}`))
+  }
+  p += '\n=== HAFIZA SONU ==='
+  return p
 }
 
 export default function App() {
-  const [callState, setCallState]   = useState('idle')
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [settings, setSettings]     = useState({ speed: 100, stability: 70, similarity: 80, voice: '' })
+  const [mode, setMode] = useState('idle')
+  const [transcript, setTranscript] = useState([])
+  const [musicTrack, setMusicTrack] = useState(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [textInputOpen, setTextInputOpen] = useState(false)
+  const [orbModalOpen, setOrbModalOpen] = useState(false)
   const [memoryPrompt, setMemoryPrompt] = useState('')
+  const [settings, setSettings] = useState({
+    speed: 100,
+    stability: 70,
+    similarity: 80,
+    voice: '',
+  })
 
-  // Widget script yükle
   useEffect(() => {
-    if (document.querySelector('script[data-hena-widget]')) return
-    const s = document.createElement('script')
-    s.src = 'https://cdn.jsdelivr.net/npm/@elevenlabs/convai-widget-embed@latest/dist/index.js'
-    s.async = true
-    s.setAttribute('data-hena-widget', '1')
-    document.body.appendChild(s)
+    api
+      .getMemory()
+      .then(memories => setMemoryPrompt(buildMemoryPrompt(memories)))
+      .catch(e => console.warn('HENA: bellek yüklenemedi', e))
   }, [])
 
-  // Sayfa yüklenince belleği önceden çek
-  useEffect(() => {
-    fetch(`${WORKER_URL}/memory`)
-      .then(r => r.json())
-      .then(memories => {
-        if (!Array.isArray(memories)) return
-        const filtered = memories.filter(m =>
-          ['user_profile','agenda','topic','preference'].includes(m.category)
-        )
-        if (filtered.length === 0) return
-
-        const profile = filtered.filter(m => m.category === 'user_profile')
-        const agenda  = filtered.filter(m => m.category === 'agenda')
-        const topics  = filtered.filter(m => m.category === 'topic')
-        const prefs   = filtered.filter(m => m.category === 'preference')
-
-        let prompt = '\n\n=== HAFIZA ==='
-        if (profile.length) prompt += '\nKullanıcı: ' + profile.map(m => `${m.key}=${m.summary}`).join(', ')
-        if (prefs.length)   prompt += '\nTercihler: ' + prefs.map(m => `${m.key}=${m.summary}`).join(', ')
-        if (agenda.length)  { prompt += '\nAktif Gündem:'; agenda.forEach(m => prompt += `\n- ${m.summary}`) }
-        if (topics.length)  { prompt += '\nTakip Edilen:'; topics.forEach(m => prompt += `\n- ${m.key}: ${m.summary}`) }
-        prompt += '\n=== HAFIZA SONU ==='
-
-        setMemoryPrompt(prompt)
-        console.log('HENA: Bellek yüklendi', filtered.length, 'kayıt')
-      })
-      .catch(e => console.warn('HENA: Bellek yüklenemedi', e))
+  const handleState = useCallback(nextState => {
+    setMode(prev => {
+      if (nextState === 'idle') return 'idle'
+      if (prev === 'music' || prev === 'tasks' || prev === 'history') {
+        // user is on a sub-page; don't auto-jump unless we hit idle
+        return nextState
+      }
+      return nextState
+    })
   }, [])
 
-  // Override injection — bellek prompt'u sistem prompt'una ekle
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.detail?.config) {
-        const tts = {
-          speed:            settings.speed / 100,
-          stability:        settings.stability / 100,
-          similarity_boost: settings.similarity / 100,
-        }
-        if (settings.voice) tts.voice_id = settings.voice
+  const handleTranscript = useCallback(msg => {
+    setTranscript(prev => [...prev, msg])
+  }, [])
 
-        e.detail.config.overrides = { tts }
+  const handleAgentMessage = useCallback(text => {
+    const track = detectMusicRequest(text)
+    if (track) {
+      setMusicTrack(track)
+      setMode('music')
+    }
+  }, [])
 
-        // Sistem prompt override — belleği ekle
-        if (memoryPrompt) {
-          e.detail.config.overrides.agent = {
-            prompt: { prompt: memoryPrompt }
-          }
+  useElevenLabs({
+    settings,
+    memoryPrompt,
+    onState: handleState,
+    onTranscript: handleTranscript,
+    onAgentMessage: handleAgentMessage,
+  })
+
+  const handleSettingChange = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }))
+  }
+
+  const handleQuickAction = (id) => {
+    if (id === 'tasks') setMode('tasks')
+    else if (id === 'history') setMode('history')
+    else if (id === 'music') setMode('music')
+    else if (id === 'note') setTextInputOpen(true)
+  }
+
+  const handleTalk = () => {
+    const ok = startCall()
+    if (ok) setMode('listening')
+    else setOrbModalOpen(true)
+  }
+
+  const handleWrite = () => setTextInputOpen(true)
+
+  const handleOrb = () => setOrbModalOpen(true)
+
+  const handleSubmitText = async (text) => {
+    handleTranscript({ role: 'user', text, time: Date.now() })
+    try {
+      const reply = await api.postUserMessage(text)
+      if (reply && typeof reply === 'object') {
+        const replyText = reply.text || reply.message || reply.reply
+        if (replyText) {
+          handleTranscript({ role: 'agent', text: replyText, time: Date.now() })
+          handleAgentMessage(replyText)
         }
       }
-      setCallState('listening')
+    } catch (e) {
+      console.warn('HENA: mesaj gönderilemedi', e)
     }
-    window.addEventListener('elevenlabs-convai:call', handler)
-    return () => window.removeEventListener('elevenlabs-convai:call', handler)
-  }, [settings, memoryPrompt])
-
-  // Widget events
-  useEffect(() => {
-    const onConnect    = () => setCallState('listening')
-    const onDisconnect = () => setCallState('idle')
-    window.addEventListener('elevenlabs-convai:connect',    onConnect)
-    window.addEventListener('elevenlabs-convai:disconnect', onDisconnect)
-    return () => {
-      window.removeEventListener('elevenlabs-convai:connect',    onConnect)
-      window.removeEventListener('elevenlabs-convai:disconnect', onDisconnect)
-    }
-  }, [])
-
-  // Speaking/listening events
-  useEffect(() => {
-    const handler = (ev) => {
-      if (!ev.data || typeof ev.data !== 'object') return
-      const t = String(ev.data.type || '')
-      if (t.includes('agent-speaking') || t.includes('agent_speaking')) setCallState('speaking')
-      if (t.includes('user-speaking')  || t.includes('user_speaking'))  setCallState('listening')
-      if (t.includes('disconnect')     || t.includes('call-end'))       setCallState('idle')
-    }
-    window.addEventListener('message', handler)
-    return () => window.removeEventListener('message', handler)
-  }, [])
-
-  const handleSettingChange = useCallback((key, val) => {
-    setSettings(prev => ({ ...prev, [key]: val }))
-  }, [])
-
-  const stateMap = {
-    idle:      { label: 'KONUŞMAK İÇİN DOKUN', status: 'HAZIR',     pillActive: false },
-    listening: { label: 'DİNLİYOR',             status: 'DİNLİYOR',  pillActive: true  },
-    speaking:  { label: 'KONUŞUYOR',            status: 'KONUŞUYOR', pillActive: true  },
   }
-  const state = stateMap[callState] || stateMap.idle
+
+  const exitToIdle = () => {
+    setMode('idle')
+    setMusicTrack(null)
+  }
+
+  let smartArea
+  if (CONVO_MODES.includes(mode)) {
+    smartArea = (
+      <ConversationMode
+        mode={mode}
+        transcript={transcript}
+        agentId={AGENT_ID}
+      />
+    )
+  } else if (mode === 'music') {
+    smartArea = (
+      <MusicMode
+        track={musicTrack}
+        onStop={() => console.log('HENA: müzik duraklat')}
+        onResume={() => console.log('HENA: müzik devam')}
+        onExit={exitToIdle}
+      />
+    )
+  } else if (mode === 'tasks') {
+    smartArea = <TasksMode onExit={exitToIdle} />
+  } else if (mode === 'history') {
+    smartArea = <HistoryMode onExit={exitToIdle} />
+  } else {
+    smartArea = <IdleMode onQuickAction={handleQuickAction} />
+  }
 
   return (
     <>
-      <div className="bg-canvas" />
-      <div className="bg-grid" />
-      <Particles />
+      <div className="app-shell">
+        <Header mode={mode} />
 
-      <div className="shell">
-        <header>
-          <div className="logo-group">
-            <div className="logo-mark"><div className="logo-inner" /></div>
-            <div className="logo-text">
-              <span className="logo-name">HENA</span>
-              <span className="logo-sub">KİŞİSEL ASISTAN</span>
-            </div>
-          </div>
-          <div className={`status-pill ${state.pillActive ? 'active' : ''}`}>
-            <span className="dot" />
-            <span>{state.status}</span>
-          </div>
-        </header>
+        <main className="smart-area">{smartArea}</main>
 
-        <main>
-          <div className="orb-wrap">
-            <div className="orb-ring r1" />
-            <div className="orb-ring r2" />
-            <div className="orb-ring r3" />
-            <div className="widget-center">
-              <elevenlabs-convai agent-id={AGENT_ID} />
-            </div>
-          </div>
+        <Footer
+          onTalk={handleTalk}
+          onWrite={handleWrite}
+          onOrb={handleOrb}
+          onToggleSettings={() => setSettingsOpen(o => !o)}
+          settingsOpen={settingsOpen}
+        />
 
-          <div className={`state-label ${state.pillActive ? 'active' : ''}`}>
-            {state.label}
-            {memoryPrompt && <span className="memory-dot" title="Bellek aktif">●</span>}
-          </div>
-
-          <SettingsDrawer open={drawerOpen} settings={settings} onChange={handleSettingChange} />
-        </main>
-
-        <footer>
-          <span className="footer-info">HENA v7.0 · REACT + BELLEK</span>
-          <button
-            className={`btn-settings ${drawerOpen ? 'active' : ''}`}
-            onClick={() => setDrawerOpen(o => !o)}
-          >
-            ⚙ AYARLAR
-          </button>
-        </footer>
+        <SettingsDrawer
+          open={settingsOpen}
+          settings={settings}
+          onChange={handleSettingChange}
+        />
       </div>
+
+      {/* Hidden host so the widget element is mounted even outside conversation mode. */}
+      {!CONVO_MODES.includes(mode) && !orbModalOpen && (
+        <div style={{ position: 'fixed', left: -9999, top: -9999, opacity: 0 }}>
+          <elevenlabs-convai agent-id={AGENT_ID} />
+        </div>
+      )}
+
+      <TextInput
+        open={textInputOpen}
+        onClose={() => setTextInputOpen(false)}
+        onSubmit={handleSubmitText}
+      />
+
+      {orbModalOpen && (
+        <div className="orb-modal" onClick={() => setOrbModalOpen(false)}>
+          <div className="orb-modal-inner" onClick={e => e.stopPropagation()}>
+            <AnimatedRings mode={mode}>
+              <elevenlabs-convai agent-id={AGENT_ID} />
+            </AnimatedRings>
+            <button
+              className="orb-modal-close"
+              onClick={() => setOrbModalOpen(false)}
+            >
+              KAPAT
+            </button>
+          </div>
+        </div>
+      )}
     </>
   )
 }
