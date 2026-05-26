@@ -1,31 +1,26 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 
 const WORKER_URL = 'https://hena-api.gurkan-ture.workers.dev'
+const AGENT_ID   = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
 
-// ── Particle sistemi ──────────────────────────────────────
 function Particles() {
   return (
     <div className="particles" aria-hidden>
       {Array.from({ length: 18 }).map((_, i) => (
-        <div
-          key={i}
-          className="particle"
-          style={{
-            left: `${Math.random() * 100}%`,
-            top:  `${55 + Math.random() * 45}%`,
-            animationDuration: `${4 + Math.random() * 6}s`,
-            animationDelay:    `${Math.random() * 8}s`,
-            width:  `${1 + Math.random() * 2}px`,
-            height: `${1 + Math.random() * 2}px`,
-          }}
-        />
+        <div key={i} className="particle" style={{
+          left: `${Math.random() * 100}%`,
+          top:  `${55 + Math.random() * 45}%`,
+          animationDuration: `${4 + Math.random() * 6}s`,
+          animationDelay:    `${Math.random() * 8}s`,
+          width:  `${1 + Math.random() * 2}px`,
+          height: `${1 + Math.random() * 2}px`,
+        }} />
       ))}
     </div>
   )
 }
 
-// ── Ayarlar drawer'ı ──────────────────────────────────────
 function SettingsDrawer({ open, settings, onChange }) {
   const sliders = [
     { key: 'speed',      label: 'HIZ',       min: 70,  max: 120, display: v => (v/100).toFixed(1)+'×' },
@@ -39,7 +34,6 @@ function SettingsDrawer({ open, settings, onChange }) {
     { value: 'XB0fDUnXU5powFXDhCwa', label: 'Charlotte' },
     { value: 'EXAVITQu4vr4xnSDxMaL', label: 'Sarah' },
   ]
-
   return (
     <div className={`drawer ${open ? 'open' : ''}`}>
       <div className="drawer-inner">
@@ -48,11 +42,9 @@ function SettingsDrawer({ open, settings, onChange }) {
           {sliders.map(s => (
             <div className="ctrl-row" key={s.key}>
               <span className="ctrl-label">{s.label}</span>
-              <input
-                type="range" min={s.min} max={s.max} step="5"
+              <input type="range" min={s.min} max={s.max} step="5"
                 value={settings[s.key]}
-                onChange={e => onChange(s.key, +e.target.value)}
-              />
+                onChange={e => onChange(s.key, +e.target.value)} />
               <span className="ctrl-value">{s.display(settings[s.key])}</span>
             </div>
           ))}
@@ -68,14 +60,52 @@ function SettingsDrawer({ open, settings, onChange }) {
   )
 }
 
-// ── Ana uygulama ──────────────────────────────────────────
 export default function App() {
-  const [callState, setCallState]   = useState('idle') // idle | listening | speaking
+  const [callState, setCallState]   = useState('idle')
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [settings, setSettings]     = useState({ speed: 100, stability: 70, similarity: 80, voice: '' })
-  const widgetRef = useRef(null)
+  const [memoryPrompt, setMemoryPrompt] = useState('')
 
-  // Override event — call başlarken ayarları inject et
+  // Widget script yükle
+  useEffect(() => {
+    if (document.querySelector('script[data-hena-widget]')) return
+    const s = document.createElement('script')
+    s.src = 'https://cdn.jsdelivr.net/npm/@elevenlabs/convai-widget-embed@latest/dist/index.js'
+    s.async = true
+    s.setAttribute('data-hena-widget', '1')
+    document.body.appendChild(s)
+  }, [])
+
+  // Sayfa yüklenince belleği önceden çek
+  useEffect(() => {
+    fetch(`${WORKER_URL}/memory`)
+      .then(r => r.json())
+      .then(memories => {
+        if (!Array.isArray(memories)) return
+        const filtered = memories.filter(m =>
+          ['user_profile','agenda','topic','preference'].includes(m.category)
+        )
+        if (filtered.length === 0) return
+
+        const profile = filtered.filter(m => m.category === 'user_profile')
+        const agenda  = filtered.filter(m => m.category === 'agenda')
+        const topics  = filtered.filter(m => m.category === 'topic')
+        const prefs   = filtered.filter(m => m.category === 'preference')
+
+        let prompt = '\n\n=== HAFIZA ==='
+        if (profile.length) prompt += '\nKullanıcı: ' + profile.map(m => `${m.key}=${m.summary}`).join(', ')
+        if (prefs.length)   prompt += '\nTercihler: ' + prefs.map(m => `${m.key}=${m.summary}`).join(', ')
+        if (agenda.length)  { prompt += '\nAktif Gündem:'; agenda.forEach(m => prompt += `\n- ${m.summary}`) }
+        if (topics.length)  { prompt += '\nTakip Edilen:'; topics.forEach(m => prompt += `\n- ${m.key}: ${m.summary}`) }
+        prompt += '\n=== HAFIZA SONU ==='
+
+        setMemoryPrompt(prompt)
+        console.log('HENA: Bellek yüklendi', filtered.length, 'kayıt')
+      })
+      .catch(e => console.warn('HENA: Bellek yüklenemedi', e))
+  }, [])
+
+  // Override injection — bellek prompt'u sistem prompt'una ekle
   useEffect(() => {
     const handler = (e) => {
       if (e.detail?.config) {
@@ -85,13 +115,21 @@ export default function App() {
           similarity_boost: settings.similarity / 100,
         }
         if (settings.voice) tts.voice_id = settings.voice
+
         e.detail.config.overrides = { tts }
+
+        // Sistem prompt override — belleği ekle
+        if (memoryPrompt) {
+          e.detail.config.overrides.agent = {
+            prompt: { prompt: memoryPrompt }
+          }
+        }
       }
       setCallState('listening')
     }
     window.addEventListener('elevenlabs-convai:call', handler)
     return () => window.removeEventListener('elevenlabs-convai:call', handler)
-  }, [settings])
+  }, [settings, memoryPrompt])
 
   // Widget events
   useEffect(() => {
@@ -105,7 +143,7 @@ export default function App() {
     }
   }, [])
 
-  // Message fallback (speaking/listening)
+  // Speaking/listening events
   useEffect(() => {
     const handler = (ev) => {
       if (!ev.data || typeof ev.data !== 'object') return
@@ -118,21 +156,10 @@ export default function App() {
     return () => window.removeEventListener('message', handler)
   }, [])
 
-  // ElevenLabs widget script inject
-  useEffect(() => {
-    if (document.querySelector('script[data-hena-widget]')) return
-    const s = document.createElement('script')
-    s.src = 'https://cdn.jsdelivr.net/npm/@elevenlabs/convai-widget-embed@latest/dist/index.js'
-    s.async = true
-    s.setAttribute('data-hena-widget', '1')
-    document.body.appendChild(s)
-  }, [])
-
   const handleSettingChange = useCallback((key, val) => {
     setSettings(prev => ({ ...prev, [key]: val }))
   }, [])
 
-  // State config
   const stateMap = {
     idle:      { label: 'KONUŞMAK İÇİN DOKUN', status: 'HAZIR',     pillActive: false },
     listening: { label: 'DİNLİYOR',             status: 'DİNLİYOR',  pillActive: true  },
@@ -142,13 +169,11 @@ export default function App() {
 
   return (
     <>
-      {/* Arka plan */}
       <div className="bg-canvas" />
       <div className="bg-grid" />
       <Particles />
 
       <div className="shell">
-        {/* Header */}
         <header>
           <div className="logo-group">
             <div className="logo-mark"><div className="logo-inner" /></div>
@@ -163,32 +188,26 @@ export default function App() {
           </div>
         </header>
 
-        {/* Main */}
         <main>
-          {/* Orb + widget */}
           <div className="orb-wrap">
             <div className="orb-ring r1" />
             <div className="orb-ring r2" />
             <div className="orb-ring r3" />
-            <div className="widget-center" ref={widgetRef}>
-              <elevenlabs-convai agent-id="agent_6401kqkzd0rpehnaspqfd8jwbj7w" />
+            <div className="widget-center">
+              <elevenlabs-convai agent-id={AGENT_ID} />
             </div>
           </div>
 
           <div className={`state-label ${state.pillActive ? 'active' : ''}`}>
             {state.label}
+            {memoryPrompt && <span className="memory-dot" title="Bellek aktif">●</span>}
           </div>
 
-          <SettingsDrawer
-            open={drawerOpen}
-            settings={settings}
-            onChange={handleSettingChange}
-          />
+          <SettingsDrawer open={drawerOpen} settings={settings} onChange={handleSettingChange} />
         </main>
 
-        {/* Footer */}
         <footer>
-          <span className="footer-info">HENA v6.0 · REACT</span>
+          <span className="footer-info">HENA v7.0 · REACT + BELLEK</span>
           <button
             className={`btn-settings ${drawerOpen ? 'active' : ''}`}
             onClick={() => setDrawerOpen(o => !o)}
