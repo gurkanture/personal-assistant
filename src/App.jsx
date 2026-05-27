@@ -7,7 +7,8 @@ const AGENT  = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
 // ── Widget script ─────────────────────────────────────────
 function useWidget() {
   useEffect(() => {
-    if (document.querySelector('script[data-hw]')) return
+    if (document.querySelector("script[data-hw]")) return
+    if (customElements.get("elevenlabs-convai")) return
     const s = document.createElement('script')
     s.src = 'https://cdn.jsdelivr.net/npm/@elevenlabs/convai-widget-embed@latest/dist/index.js'
     s.async = true; s.setAttribute('data-hw', '1')
