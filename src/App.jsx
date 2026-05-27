@@ -303,13 +303,13 @@ export default function App() {
             ✏
           </button>
 
-          <button
-            className={`fb fb-main ${callState !== 'idle' ? 'fb-active' : ''}`}
-            onClick={triggerWidget}
-          >
+          <div className={`fb fb-main ${callState !== 'idle' ? 'fb-active' : ''}`}
+            style={{position:'relative', overflow:'hidden'}}>
             <span className="fb-mic">🎙</span>
             <span className="fb-label">{callState === 'idle' ? 'KONUŞ' : 'KAPAT'}</span>
-          </button>
+            <elevenlabs-convai id="el-widget" agent-id={AGENT}
+              style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0,zIndex:10}} />
+          </div>
 
           <button className={`fb fb-tasks ${mode==='tasks'?'fb-on':''}`}
             onClick={() => setMode(m => m==='tasks' ? 'idle' : 'tasks')}>
@@ -322,10 +322,6 @@ export default function App() {
           </button>
         </footer>
       </div>
-
-      {/* Gizli widget */}
-      <elevenlabs-convai id="el-widget" agent-id={AGENT}
-        style={{position:'fixed',bottom:'-9999px',right:'-9999px',opacity:0,pointerEvents:'none'}} />
 
       <SettingsSheet open={showSettings} settings={settings}
         onChange={handleSettings} onClose={() => setShowSettings(false)} />
