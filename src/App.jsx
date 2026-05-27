@@ -4,19 +4,6 @@ import './App.css'
 const WORKER = 'https://hena-api.gurkan-ture.workers.dev'
 const AGENT  = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
 
-// ── Widget script ─────────────────────────────────────────
-function useWidget() {
-  useEffect(() => {
-    if (document.querySelector("script[data-hw]")) return
-    if (customElements.get("elevenlabs-convai")) return
-    const s = document.createElement('script')
-    s.src = 'https://cdn.jsdelivr.net/npm/@elevenlabs/convai-widget-embed@latest/dist/index.js'
-    s.async = true; s.setAttribute('data-hw', '1')
-    document.body.appendChild(s)
-  }, [])
-}
-
-// ── Memory ────────────────────────────────────────────────
 function useMemory() {
   const [prompt, setPrompt] = useState('')
   useEffect(() => {
@@ -36,295 +23,268 @@ function useMemory() {
   return prompt
 }
 
-// ── Dönen halkalar (idle) ─────────────────────────────────
-function OrbRings({ state }) {
+// ── Orb ──────────────────────────────────────────────────
+function Orb({ state }) {
   return (
-    <div className={`orb-stage stage-${state}`}>
-      <div className="ring r1" /><div className="ring r2" /><div className="ring r3" />
+    <div className={`orb-wrap orb-${state}`}>
+      <div className="ring r1"/><div className="ring r2"/><div className="ring r3"/>
       <div className="orb-core">
-        {(state === 'speaking') && (
+        {state === 'speaking' && (
           <div className="wave-bars">
-            {[0,.07,.14,.21,.28].map((d,i) => <div key={i} className="wb" style={{animationDelay:`${d}s`}} />)}
+            {[0,.07,.14,.21,.28].map((d,i)=><div key={i} className="wb" style={{animationDelay:`${d}s`}}/>)}
           </div>
         )}
-        {(state === 'listening') && <div className="listen-pulse" />}
-        {(state === 'idle') && <div className="idle-dot" />}
+        {state === 'listening' && <div className="pulse-ring"/>}
+        <div className="orb-dot"/>
       </div>
     </div>
   )
 }
 
-// ── Karatahta içerikleri ──────────────────────────────────
-function KaratahtalIdle() {
+// ── Music bars ────────────────────────────────────────────
+function MusicBars() {
   return (
-    <div className="kb-idle">
-      <OrbRings state="idle" />
-      <p className="kb-hint">Konuşmak için mikrofona dokun</p>
-    </div>
-  )
-}
-
-function KaratahtalConv({ msgs, state }) {
-  const ref = useRef(null)
-  useEffect(() => { ref.current?.scrollTo(0, ref.current.scrollHeight) }, [msgs])
-  return (
-    <div className="kb-conv">
-      <OrbRings state={state} />
-      <div className="transcript" ref={ref}>
-        {msgs.slice(-6).map((m, i) => (
-          <div key={i} className={`line line-${m.role}`}>
-            <span className="line-who">{m.role === 'user' ? 'Sen' : 'HENA'}</span>
-            <span className="line-text">{m.text}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function KaratahtalMusic({ track }) {
-  return (
-    <div className="kb-music">
-      <div className="music-visual">
-        {[...Array(12)].map((_,i) => (
-          <div key={i} className="music-bar" style={{animationDelay:`${i*0.08}s`, height:`${20+Math.random()*60}%`}} />
-        ))}
-      </div>
-      <div className="music-info">
-        <div className="music-label">ŞU AN ÇALIYOR</div>
-        <div className="music-track">{track}</div>
-      </div>
-    </div>
-  )
-}
-
-function KaratahtalTasks({ tasks, onClose, onDone }) {
-  return (
-    <div className="kb-tasks">
-      <div className="kb-tasks-header">
-        <span>📋 Bekleyen Görevler</span>
-        <button className="kb-close" onClick={onClose}>✕</button>
-      </div>
-      {tasks.length === 0 && <div className="kb-empty">Bekleyen görev yok 🎉</div>}
-      {tasks.map(t => (
-        <div key={t.id} className="task-row">
-          <button className="task-done-btn" onClick={() => onDone(t.id)}>◻</button>
-          <div className="task-body">
-            <div className="task-name">{t.title}</div>
-            {t.description && <div className="task-desc">{t.description}</div>}
-          </div>
-        </div>
+    <div className="music-bars">
+      {[...Array(8)].map((_,i)=>(
+        <div key={i} className="mbar" style={{animationDelay:`${i*0.09}s`, animationDuration:`${0.6+i*0.07}s`}}/>
       ))}
     </div>
   )
 }
 
-function KaratahtalText({ onClose, onSend }) {
-  const [val, setVal] = useState('')
-  const send = () => { if (!val.trim()) return; onSend(val); setVal(''); onClose() }
-  return (
-    <div className="kb-text">
-      <OrbRings state="idle" />
-      <div className="text-area">
-        <input className="text-in" placeholder="HENA'ya yaz..." value={val}
-          onChange={e => setVal(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send()}
-          autoFocus />
-        <button className="text-btn" onClick={send}>↑</button>
-      </div>
-    </div>
-  )
-}
-
-// ── Settings sheet ────────────────────────────────────────
-function SettingsSheet({ open, settings, onChange, onClose }) {
-  if (!open) return null
-  const sliders = [
-    { key:'speed',      label:'HIZ',       min:70,  max:120, fmt: v=>(v/100).toFixed(1)+'×' },
-    { key:'stability',  label:'STABİLİTE', min:30,  max:100, fmt: v=>(v/100).toFixed(2) },
-    { key:'similarity', label:'BENZERLİK', min:50,  max:100, fmt: v=>(v/100).toFixed(2) },
-  ]
-  const voices = [
-    {value:'',label:'— Varsayılan —'},{value:'AmW3oHMmMm7pJX7z8Kj3',label:'Amelia'},
-    {value:'jsCqWAovK2LkecY7zXl4',label:'Freya'},{value:'XB0fDUnXU5powFXDhCwa',label:'Charlotte'},
-    {value:'EXAVITQu4vr4xnSDxMaL',label:'Sarah'},
-  ]
-  return (
-    <div className="sheet-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
-      <div className="sheet">
-        <div className="sheet-handle" />
-        <div className="sheet-title">Ses Ayarları</div>
-        {sliders.map(s => (
-          <div className="s-row" key={s.key}>
-            <span className="s-label">{s.label}</span>
-            <input type="range" min={s.min} max={s.max} step="5"
-              value={settings[s.key]} onChange={e => onChange(s.key, +e.target.value)} />
-            <span className="s-val">{s.fmt(settings[s.key])}</span>
-          </div>
-        ))}
-        <div className="s-row">
-          <span className="s-label">SES</span>
-          <select value={settings.voice} onChange={e => onChange('voice', e.target.value)}>
-            {voices.map(v => <option key={v.value} value={v.value}>{v.label}</option>)}
-          </select>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Main ──────────────────────────────────────────────────
+// ── Main App ──────────────────────────────────────────────
 export default function App() {
   const [callState, setCallState] = useState('idle')
-  const [mode,      setMode]      = useState('idle') // idle|conv|music|tasks|text
+  const [mode,      setMode]      = useState('idle')
   const [msgs,      setMsgs]      = useState([])
   const [track,     setTrack]     = useState('')
   const [tasks,     setTasks]     = useState([])
-  const [settings,  setSettings]  = useState({speed:100, stability:70, similarity:80, voice:''})
-  const [showSettings, setShowSettings] = useState(false)
-
+  const [settings,  setSettings]  = useState({speed:100,stability:70,similarity:80,voice:''})
+  const [showSet,   setShowSet]   = useState(false)
+  const [showText,  setShowText]  = useState(false)
+  const [textVal,   setTextVal]   = useState('')
+  const transcriptRef = useRef(null)
   const memory = useMemory()
-  useWidget()
 
-  // Tasks
+  // Load widget script once
+  useEffect(() => {
+    if (customElements.get('elevenlabs-convai')) return
+    if (document.querySelector('script[data-hw]')) return
+    const s = document.createElement('script')
+    s.src = 'https://cdn.jsdelivr.net/npm/@elevenlabs/convai-widget-embed@latest/dist/index.js'
+    s.async = true; s.setAttribute('data-hw','1')
+    document.body.appendChild(s)
+  }, [])
+
+  // Load tasks
   const loadTasks = useCallback(() => {
-    fetch(`${WORKER}/tasks?status=pending&limit=10`).then(r=>r.json()).then(d => {
+    fetch(`${WORKER}/tasks?status=pending&limit=8`).then(r=>r.json()).then(d=>{
       if (Array.isArray(d)) setTasks(d)
     }).catch(()=>{})
-  }, [])
-  useEffect(() => { loadTasks() }, [loadTasks])
+  },[])
+  useEffect(()=>{ loadTasks() },[loadTasks])
 
-  const markDone = (id) => {
-    fetch(`${WORKER}/tasks/${id}/status`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({status:'done'})
-    }).then(() => loadTasks())
-  }
+  // Auto scroll transcript
+  useEffect(()=>{ transcriptRef.current?.scrollTo(0,transcriptRef.current.scrollHeight) },[msgs])
 
   // ElevenLabs events
-  useEffect(() => {
-    const h = (e) => {
+  useEffect(()=>{
+    const h = e => {
       if (e.detail?.config) {
-        const tts = { speed: settings.speed/100, stability: settings.stability/100, similarity_boost: settings.similarity/100 }
+        const tts = {speed:settings.speed/100,stability:settings.stability/100,similarity_boost:settings.similarity/100}
         if (settings.voice) tts.voice_id = settings.voice
-        e.detail.config.overrides = { tts }
-        if (memory) e.detail.config.overrides.agent = { prompt: { prompt: memory } }
+        e.detail.config.overrides = {tts}
+        if (memory) e.detail.config.overrides.agent = {prompt:{prompt:memory}}
       }
       setCallState('listening'); setMode('conv')
     }
     window.addEventListener('elevenlabs-convai:call', h)
-    return () => window.removeEventListener('elevenlabs-convai:call', h)
-  }, [settings, memory])
+    return ()=>window.removeEventListener('elevenlabs-convai:call', h)
+  },[settings,memory])
 
-  useEffect(() => {
-    const onConn = () => { setCallState('listening'); setMode('conv') }
-    const onDisc = () => { setCallState('idle'); setMode('idle') }
-    window.addEventListener('elevenlabs-convai:connect', onConn)
+  useEffect(()=>{
+    const onConn = ()=>{ setCallState('listening'); setMode('conv') }
+    const onDisc = ()=>{ setCallState('idle'); setMode('idle') }
+    window.addEventListener('elevenlabs-convai:connect',    onConn)
     window.addEventListener('elevenlabs-convai:disconnect', onDisc)
-    return () => {
-      window.removeEventListener('elevenlabs-convai:connect', onConn)
+    return ()=>{
+      window.removeEventListener('elevenlabs-convai:connect',    onConn)
       window.removeEventListener('elevenlabs-convai:disconnect', onDisc)
     }
-  }, [])
+  },[])
 
-  useEffect(() => {
-    const h = (ev) => {
-      if (!ev.data || typeof ev.data !== 'object') return
-      const t = String(ev.data.type || '')
-      if (t.includes('agent-speaking') || t.includes('agent_speaking')) setCallState('speaking')
-      if (t.includes('user-speaking')  || t.includes('user_speaking'))  setCallState('listening')
-      if (t.includes('disconnect')     || t.includes('call-end'))       { setCallState('idle'); setMode('idle') }
+  useEffect(()=>{
+    const h = ev => {
+      if (!ev.data||typeof ev.data!=='object') return
+      const t = String(ev.data.type||'')
+      if (t.includes('agent-speaking')||t.includes('agent_speaking')) setCallState('speaking')
+      if (t.includes('user-speaking') ||t.includes('user_speaking'))  setCallState('listening')
+      if (t.includes('disconnect')    ||t.includes('call-end'))       {setCallState('idle');setMode('idle')}
       if (ev.data.message) {
-        const role = t.includes('agent') ? 'agent' : 'user'
-        setMsgs(prev => [...prev.slice(-30), {role, text: ev.data.message}])
+        const role = t.includes('agent')?'agent':'user'
+        setMsgs(p=>[...p.slice(-40),{role,text:ev.data.message,ts:Date.now()}])
+        if (mode!=='music') setMode('conv')
         const m = ev.data.message.match(/müzik_iste:(.+)/i)
         if (m) { setTrack(m[1].trim()); setMode('music') }
       }
     }
-    window.addEventListener('message', h)
-    return () => window.removeEventListener('message', h)
-  }, [])
+    window.addEventListener('message',h)
+    return ()=>window.removeEventListener('message',h)
+  },[mode])
 
-  const triggerWidget = () => {
-    const w = document.getElementById('el-widget')
-    const btn = w?.shadowRoot?.querySelector('button')
-    if (btn) btn.click()
+  const markDone = id => {
+    fetch(`${WORKER}/tasks/${id}/status`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status:'done'})
+    }).then(()=>loadTasks())
   }
 
-  const handleSettings = useCallback((key, val) => {
-    setSettings(prev => ({...prev, [key]: val}))
-  }, [])
+  const sendText = () => {
+    if (!textVal.trim()) return
+    setMsgs(p=>[...p,{role:'user',text:textVal,ts:Date.now()}])
+    setMode('conv'); setShowText(false); setTextVal('')
+  }
 
-  const statusLabels = { idle:'HAZIR', listening:'DİNLİYOR', speaking:'KONUŞUYOR' }
+  const stLabel = {idle:'HAZIR',listening:'DİNLİYOR',speaking:'KONUŞUYOR'}
 
-  // Karatahta içeriği
+  // ── Karatahta content ──
   const renderKB = () => {
-    switch(mode) {
-      case 'conv':  return <KaratahtalConv msgs={msgs} state={callState} />
-      case 'music': return <KaratahtalMusic track={track} />
-      case 'tasks': return <KaratahtalTasks tasks={tasks} onClose={() => setMode('idle')} onDone={markDone} />
-      case 'text':  return <KaratahtalText onClose={() => setMode('idle')} onSend={(text) => {
-        setMsgs(prev => [...prev, {role:'user', text}])
-        setMode('conv')
-      }} />
-      default:      return <KaratahtalIdle />
-    }
+    if (mode === 'tasks') return (
+      <div className="kb-tasks">
+        <div className="kb-tasks-top">
+          <span className="kb-label">📋 GÖREVLER</span>
+          <button className="kb-x" onClick={()=>setMode('idle')}>✕</button>
+        </div>
+        {tasks.length===0 && <p className="kb-empty">Bekleyen görev yok 🎉</p>}
+        {tasks.map(t=>(
+          <div key={t.id} className="task-item">
+            <button className="task-chk" onClick={()=>markDone(t.id)}>◻</button>
+            <div>
+              <div className="task-n">{t.title}</div>
+              {t.description&&<div className="task-d">{t.description}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+
+    if (mode === 'music') return (
+      <div className="kb-music">
+        <MusicBars/>
+        <div className="music-track">{track}</div>
+        <div className="music-sub">Windows Agent çalıyor</div>
+        <button className="music-back" onClick={()=>setMode(callState!=='idle'?'conv':'idle')}>← Geri</button>
+      </div>
+    )
+
+    // conv + idle → orb + transcript
+    return (
+      <div className="kb-main">
+        <Orb state={callState}/>
+        {callState==='idle'&&mode==='idle' && (
+          <p className="idle-hint">Konuşmak için mikrofona dokun</p>
+        )}
+        {msgs.length>0 && (
+          <div className="transcript" ref={transcriptRef}>
+            {msgs.slice(-8).map((m,i)=>(
+              <div key={i} className={`line line-${m.role}`}>
+                <span className="line-who">{m.role==='user'?'SEN':'HENA'}</span>
+                <span className="line-txt">{m.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
     <>
-      <div className="bg" /><div className="grid" />
+      <div className="bg"/><div className="grid-bg"/>
 
       <div className="shell">
         {/* Header */}
         <header>
           <div className="logo">
-            <div className="logo-gem"><div className="gem-dot" /></div>
+            <div className="gem"><div className="gem-dot"/></div>
             <div>
-              <div className="logo-name">HENA</div>
-              <div className="logo-sub">KİŞİSEL ASISTAN</div>
+              <div className="logo-n">HENA</div>
+              <div className="logo-s">KİŞİSEL ASISTAN</div>
             </div>
           </div>
-          <div className={`pill ${callState !== 'idle' ? 'pill-on' : ''}`}>
-            <span className="pill-dot" />
-            {statusLabels[callState]}
+          <div className={`pill ${callState!=='idle'?'pill-on':''}`}>
+            <span className="pdot"/>
+            {stLabel[callState]}
           </div>
         </header>
 
         {/* Karatahta */}
-        <main className="karatahta">
-          {renderKB()}
-        </main>
+        <main className="karatahta">{renderKB()}</main>
+
+        {/* Text input bar */}
+        {showText && (
+          <div className="text-bar">
+            <input className="text-in" placeholder="HENA'ya yaz..."
+              value={textVal} onChange={e=>setTextVal(e.target.value)}
+              onKeyDown={e=>e.key==='Enter'&&sendText()} autoFocus/>
+            <button className="text-send" onClick={sendText}>↑</button>
+            <button className="text-cls" onClick={()=>setShowText(false)}>✕</button>
+          </div>
+        )}
 
         {/* Footer */}
         <footer>
-          <button className={`fb fb-text ${mode==='text'?'fb-on':''}`}
-            onClick={() => setMode(m => m==='text' ? 'idle' : 'text')}>
-            ✏
-          </button>
+          <button className={`fb sm ${showText?'fb-on':''}`} onClick={()=>setShowText(v=>!v)}>✏</button>
 
-          <div className={`fb fb-main ${callState !== 'idle' ? 'fb-active' : ''}`}
-            style={{position:'relative', overflow:'hidden'}}>
-            <span className="fb-mic">🎙</span>
-            <span className="fb-label">{callState === 'idle' ? 'KONUŞ' : 'KAPAT'}</span>
-            <elevenlabs-convai id="el-widget" agent-id={AGENT}
-              style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0,zIndex:10}} />
+          {/* KONUŞ — widget overlay inside */}
+          <div className={`fb main-btn ${callState!=='idle'?'main-on':''}`}>
+            <span className="mic-ico">🎙</span>
+            <span className="main-lbl">{callState==='idle'?'KONUŞ':'KAPAT'}</span>
+            <elevenlabs-convai
+              id="el-widget"
+              agent-id={AGENT}
+              style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0,zIndex:10,cursor:'pointer'}}
+            />
           </div>
 
-          <button className={`fb fb-tasks ${mode==='tasks'?'fb-on':''}`}
-            onClick={() => setMode(m => m==='tasks' ? 'idle' : 'tasks')}>
-            📋
-          </button>
+          <button className={`fb sm ${mode==='tasks'?'fb-on':''}`}
+            onClick={()=>setMode(m=>m==='tasks'?'idle':'tasks')}>📋</button>
 
-          <button className={`fb fb-set ${showSettings?'fb-on':''}`}
-            onClick={() => setShowSettings(v => !v)}>
-            ⚙
-          </button>
+          <button className={`fb sm ${showSet?'fb-on':''}`} onClick={()=>setShowSet(v=>!v)}>⚙</button>
         </footer>
       </div>
 
-      <SettingsSheet open={showSettings} settings={settings}
-        onChange={handleSettings} onClose={() => setShowSettings(false)} />
+      {/* Settings sheet */}
+      {showSet && (
+        <div className="sheet-bg" onClick={e=>e.target===e.currentTarget&&setShowSet(false)}>
+          <div className="sheet">
+            <div className="sheet-handle"/>
+            <div className="sheet-title">Ses Ayarları</div>
+            {[
+              {k:'speed',l:'HIZ',min:70,max:120,f:v=>(v/100).toFixed(1)+'×'},
+              {k:'stability',l:'STABİLİTE',min:30,max:100,f:v=>(v/100).toFixed(2)},
+              {k:'similarity',l:'BENZERLİK',min:50,max:100,f:v=>(v/100).toFixed(2)},
+            ].map(s=>(
+              <div key={s.k} className="s-row">
+                <span className="s-lbl">{s.l}</span>
+                <input type="range" min={s.min} max={s.max} step="5"
+                  value={settings[s.k]} onChange={e=>setSettings(p=>({...p,[s.k]:+e.target.value}))}/>
+                <span className="s-val">{s.f(settings[s.k])}</span>
+              </div>
+            ))}
+            <div className="s-row">
+              <span className="s-lbl">SES</span>
+              <select value={settings.voice} onChange={e=>setSettings(p=>({...p,voice:e.target.value}))}>
+                <option value="">— Varsayılan —</option>
+                <option value="AmW3oHMmMm7pJX7z8Kj3">Amelia</option>
+                <option value="jsCqWAovK2LkecY7zXl4">Freya</option>
+                <option value="XB0fDUnXU5powFXDhCwa">Charlotte</option>
+                <option value="EXAVITQu4vr4xnSDxMaL">Sarah</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }
