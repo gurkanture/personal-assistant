@@ -164,6 +164,7 @@ function Bubble({ msg }) {
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
   const [callState, setCallState] = useState('idle')
+  const [connecting, setConnecting] = useState(false)
   const [msgs,      setMsgs]      = useState([])
   const [track,     setTrack]     = useState('')
   const [showMode,  setShowMode]  = useState('idle') // idle|conv|music|tasks|text
@@ -258,6 +259,39 @@ export default function App() {
   }
 
   const stLabel = {idle:'HAZIR',listening:'DİNLİYOR',speaking:'KONUŞUYOR'}
+
+  // ── Widget button handler ──────────────────────────────
+  const handleMainBtn = useCallback(() => {
+    if (connecting) return
+
+    const clickBtn = (tries = 0) => {
+      const w = document.getElementById('el-widget')
+      const btn = w?.shadowRoot?.querySelector('button')
+      if (btn) {
+        btn.click()
+        setConnecting(false)
+      } else if (tries < 30) {
+        setTimeout(() => clickBtn(tries + 1), 200)
+      } else {
+        setConnecting(false)
+        console.warn('HENA: widget button not found')
+      }
+    }
+
+    if (callState === 'idle') {
+      setConnecting(true)
+      setShowMode('conv')
+      clickBtn()
+    } else {
+      setConnecting(true)
+      clickBtn()
+      setTimeout(() => {
+        setCallState('idle')
+        setShowMode('idle')
+        setConnecting(false)
+      }, 800)
+    }
+  }, [callState, connecting])
 
   // ── Karatahta render ──────────────────────────────────
   const renderKaratahta = () => {
@@ -390,15 +424,21 @@ export default function App() {
         <footer>
           <button className={`fb sm ${showText?'fb-on':''}`} onClick={()=>setShowText(v=>!v)}>✏</button>
 
-          <div className={`fb main-btn ${callState!=='idle'?'main-on':''}`}>
-            <span className="mic-ico">🎙</span>
-            <span className="main-lbl">{callState==='idle'?'KONUŞ':'KAPAT'}</span>
-            <elevenlabs-convai
-              id="el-widget"
-              agent-id={AGENT}
-              style={{position:'absolute',inset:0,width:'100%',height:'100%',opacity:0,zIndex:10,cursor:'pointer'}}
-            />
-          </div>
+          <button
+            className={`fb main-btn ${callState!=='idle'?'main-on':''} ${connecting?'main-connecting':''}`}
+            onClick={handleMainBtn}
+            disabled={connecting}
+          >
+            {connecting
+              ? <><span className="spinner"/><span className="main-lbl">BAĞLANIYOR</span></>
+              : <><span className="mic-ico">🎙</span><span className="main-lbl">{callState==='idle'?'KONUŞ':'KAPAT'}</span></>
+            }
+          </button>
+          <elevenlabs-convai
+            id="el-widget"
+            agent-id={AGENT}
+            style={{position:'fixed',bottom:'-9999px',right:'-9999px',opacity:0.001,pointerEvents:'none',width:'60px',height:'60px'}}
+          />
 
           <button className={`fb sm ${showMode==='tasks'?'fb-on':''}`}
             onClick={()=>setShowMode(m=>m==='tasks'?'idle':'tasks')}>📋</button>

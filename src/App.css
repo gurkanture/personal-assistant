@@ -174,3 +174,14 @@ select option{background:#0a1020}
   .orb-wrap{width:150px;height:150px}
   .orb-core{width:80px;height:80px}
 }
+
+/* ── Connecting state ── */
+.main-connecting { opacity: 0.7; cursor: wait !important; }
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid rgba(74,158,237,.2);
+  border-top-color: var(--acc);
+  animation: spin-s .7s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes spin-s { to { transform: rotate(360deg) } }
