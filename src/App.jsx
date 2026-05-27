@@ -337,11 +337,16 @@ export default function App() {
     // CONV — chat bubbles + visualizer
     if (showMode === 'conv') return (
       <div className="kb-conv">
-        {/* Visualizer area */}
+        {/* Chat bubbles — flex:1, fills space */}
+        <div className="bubbles" ref={scrollRef}>
+          {msgs.slice(-30).map((m,i)=><Bubble key={i} msg={m}/>)}
+        </div>
+
+        {/* Visualizer — bottom, compact */}
         <div className="viz-area">
           {callState === 'listening' && (
             <div className="viz-block">
-              <canvas ref={userCanvasRef} width={360} height={90} className="viz-canvas"/>
+              <canvas ref={userCanvasRef} width={340} height={64} className="viz-canvas"/>
               <div className="viz-label">DİNLİYOR</div>
             </div>
           )}
@@ -351,16 +356,12 @@ export default function App() {
               <div className="viz-label hena-label">HENA KONUŞUYOR</div>
             </div>
           )}
-          {callState === 'idle' && msgs.length > 0 && (
-            <div className="viz-block">
-              <OrbIdle/>
+          {callState === 'idle' && (
+            <div className="viz-idle">
+              <div className="viz-idle-dot"/> 
+              <span className="viz-label">KONUŞMA BITTI</span>
             </div>
           )}
-        </div>
-
-        {/* Chat bubbles */}
-        <div className="bubbles" ref={scrollRef}>
-          {msgs.slice(-12).map((m,i)=><Bubble key={i} msg={m}/>)}
         </div>
       </div>
     )

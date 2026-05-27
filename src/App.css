@@ -185,3 +185,8 @@ select option{background:#0a1020}
   flex-shrink: 0;
 }
 @keyframes spin-s { to { transform: rotate(360deg) } }
+
+/* viz bottom */
+.viz-area { flex-shrink: 0; padding: 8px 20px 12px; display:flex; flex-direction:column; align-items:center; gap:6px; border-top: 1px solid var(--b1); }
+.viz-idle { display:flex; align-items:center; gap:8px; padding:6px 0; }
+.viz-idle-dot { width:6px; height:6px; border-radius:50%; background:var(--mut2); }
