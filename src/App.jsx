@@ -4,6 +4,7 @@ import './App.css'
 const WORKER = 'https://hena-api.gurkan-ture.workers.dev'
 const AGENT  = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
 
+// ── Memory ────────────────────────────────────────────────
 function useMemory() {
   const [prompt, setPrompt] = useState('')
   useEffect(() => {
@@ -23,31 +24,139 @@ function useMemory() {
   return prompt
 }
 
-// ── Orb ──────────────────────────────────────────────────
-function Orb({ state }) {
+// ── Web Audio Visualizer ──────────────────────────────────
+function useAudioVisualizer(active) {
+  const canvasRef = useRef(null)
+  const rafRef    = useRef(null)
+  const analyserRef = useRef(null)
+  const sourceRef   = useRef(null)
+  const ctxRef      = useRef(null)
+
+  useEffect(() => {
+    if (!active) {
+      cancelAnimationFrame(rafRef.current)
+      if (sourceRef.current) { try { sourceRef.current.disconnect() } catch(e){} }
+      if (ctxRef.current)    { try { ctxRef.current.close() }         catch(e){} }
+      analyserRef.current = null; sourceRef.current = null; ctxRef.current = null
+      // Clear canvas
+      const c = canvasRef.current; if (!c) return
+      const ctx = c.getContext('2d'); ctx.clearRect(0,0,c.width,c.height)
+      return
+    }
+
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream => {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 128
+      const source = audioCtx.createMediaStreamSource(stream)
+      source.connect(analyser)
+      ctxRef.current = audioCtx; analyserRef.current = analyser; sourceRef.current = source
+
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      const canvas = canvasRef.current
+      if (!canvas) return
+      const ctx = canvas.getContext('2d')
+
+      const draw = () => {
+        rafRef.current = requestAnimationFrame(draw)
+        analyser.getByteFrequencyData(data)
+        const W = canvas.width, H = canvas.height
+        ctx.clearRect(0,0,W,H)
+        const barW = W / data.length * 2.5
+        let x = 0
+        for (let i = 0; i < data.length; i++) {
+          const h = (data[i] / 255) * H * 0.85
+          const hue = 200 + i * 0.5
+          ctx.fillStyle = `hsla(${hue},80%,65%,0.85)`
+          // Mirrored bars from center
+          ctx.fillRect(W/2 + x, H - h, barW - 1, h)
+          ctx.fillRect(W/2 - x - barW, H - h, barW - 1, h)
+          x += barW
+          if (x > W/2) break
+        }
+      }
+      draw()
+    }).catch(() => {
+      // Mic unavailable — show fake animation
+      const canvas = canvasRef.current; if (!canvas) return
+      const ctx = canvas.getContext('2d')
+      const W = canvas.width, H = canvas.height
+      let t = 0
+      const draw = () => {
+        if (!active) return
+        rafRef.current = requestAnimationFrame(draw)
+        ctx.clearRect(0,0,W,H)
+        const bars = 24
+        for (let i = 0; i < bars; i++) {
+          const h = (Math.sin(t * 3 + i * 0.4) * 0.5 + 0.5) * H * 0.7
+          const hue = 200 + i * 3
+          ctx.fillStyle = `hsla(${hue},75%,62%,0.8)`
+          const bw = W / bars - 3
+          ctx.fillRect(i * (bw + 3), H - h, bw, h)
+          t += 0.008
+        }
+      }
+      draw()
+    })
+
+    return () => {
+      cancelAnimationFrame(rafRef.current)
+      if (sourceRef.current) { try { sourceRef.current.disconnect() } catch(e){} }
+      if (ctxRef.current)    { try { ctxRef.current.close() }         catch(e){} }
+    }
+  }, [active])
+
+  return canvasRef
+}
+
+// ── HENA speaking visualizer (animated sine) ─────────────
+function HenaBars({ active }) {
+  const canvasRef = useRef(null)
+  const rafRef    = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current; if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    const W = canvas.width, H = canvas.height
+    let t = 0
+
+    const draw = () => {
+      rafRef.current = requestAnimationFrame(draw)
+      ctx.clearRect(0,0,W,H)
+      if (!active) return
+      const bars = 20
+      for (let i = 0; i < bars; i++) {
+        const h = (Math.sin(t * 4 + i * 0.5) * 0.5 + 0.5) * H * 0.8 + H * 0.1
+        ctx.fillStyle = `hsla(165,70%,60%,0.8)`
+        const bw = W / bars - 4
+        ctx.fillRect(i * (W/bars), H - h, bw, h)
+      }
+      t += 0.012
+    }
+    draw()
+    return () => cancelAnimationFrame(rafRef.current)
+  }, [active])
+
+  return <canvas ref={canvasRef} width={360} height={100} className="viz-canvas"/>
+}
+
+// ── Orb idle ──────────────────────────────────────────────
+function OrbIdle() {
   return (
-    <div className={`orb-wrap orb-${state}`}>
+    <div className="orb-wrap">
       <div className="ring r1"/><div className="ring r2"/><div className="ring r3"/>
       <div className="orb-core">
-        {state === 'speaking' && (
-          <div className="wave-bars">
-            {[0,.07,.14,.21,.28].map((d,i)=><div key={i} className="wb" style={{animationDelay:`${d}s`}}/>)}
-          </div>
-        )}
-        {state === 'listening' && <div className="pulse-ring"/>}
         <div className="orb-dot"/>
       </div>
     </div>
   )
 }
 
-// ── Music bars ────────────────────────────────────────────
-function MusicBars() {
+// ── Chat bubble ───────────────────────────────────────────
+function Bubble({ msg }) {
   return (
-    <div className="music-bars">
-      {[...Array(8)].map((_,i)=>(
-        <div key={i} className="mbar" style={{animationDelay:`${i*0.09}s`, animationDuration:`${0.6+i*0.07}s`}}/>
-      ))}
+    <div className={`bubble bubble-${msg.role}`}>
+      <div className="bubble-txt">{msg.text}</div>
     </div>
   )
 }
@@ -55,18 +164,21 @@ function MusicBars() {
 // ── Main App ──────────────────────────────────────────────
 export default function App() {
   const [callState, setCallState] = useState('idle')
-  const [mode,      setMode]      = useState('idle')
   const [msgs,      setMsgs]      = useState([])
   const [track,     setTrack]     = useState('')
+  const [showMode,  setShowMode]  = useState('idle') // idle|conv|music|tasks|text
   const [tasks,     setTasks]     = useState([])
   const [settings,  setSettings]  = useState({speed:100,stability:70,similarity:80,voice:''})
   const [showSet,   setShowSet]   = useState(false)
   const [showText,  setShowText]  = useState(false)
   const [textVal,   setTextVal]   = useState('')
-  const transcriptRef = useRef(null)
-  const memory = useMemory()
+  const scrollRef   = useRef(null)
+  const memory      = useMemory()
 
-  // Load widget script once
+  // Audio visualizers
+  const userCanvasRef = useAudioVisualizer(callState === 'listening')
+
+  // Load widget script
   useEffect(() => {
     if (customElements.get('elevenlabs-convai')) return
     if (document.querySelector('script[data-hw]')) return
@@ -84,10 +196,10 @@ export default function App() {
   },[])
   useEffect(()=>{ loadTasks() },[loadTasks])
 
-  // Auto scroll transcript
-  useEffect(()=>{ transcriptRef.current?.scrollTo(0,transcriptRef.current.scrollHeight) },[msgs])
+  // Auto scroll
+  useEffect(()=>{ scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight) },[msgs])
 
-  // ElevenLabs events
+  // ElevenLabs override injection
   useEffect(()=>{
     const h = e => {
       if (e.detail?.config) {
@@ -96,15 +208,15 @@ export default function App() {
         e.detail.config.overrides = {tts}
         if (memory) e.detail.config.overrides.agent = {prompt:{prompt:memory}}
       }
-      setCallState('listening'); setMode('conv')
+      setCallState('listening'); setShowMode('conv')
     }
     window.addEventListener('elevenlabs-convai:call', h)
     return ()=>window.removeEventListener('elevenlabs-convai:call', h)
   },[settings,memory])
 
   useEffect(()=>{
-    const onConn = ()=>{ setCallState('listening'); setMode('conv') }
-    const onDisc = ()=>{ setCallState('idle'); setMode('idle') }
+    const onConn = ()=>{ setCallState('listening'); setShowMode('conv') }
+    const onDisc = ()=>{ setCallState('idle'); setShowMode('idle') }
     window.addEventListener('elevenlabs-convai:connect',    onConn)
     window.addEventListener('elevenlabs-convai:disconnect', onDisc)
     return ()=>{
@@ -119,18 +231,18 @@ export default function App() {
       const t = String(ev.data.type||'')
       if (t.includes('agent-speaking')||t.includes('agent_speaking')) setCallState('speaking')
       if (t.includes('user-speaking') ||t.includes('user_speaking'))  setCallState('listening')
-      if (t.includes('disconnect')    ||t.includes('call-end'))       {setCallState('idle');setMode('idle')}
+      if (t.includes('disconnect')    ||t.includes('call-end'))       { setCallState('idle'); setShowMode('idle') }
       if (ev.data.message) {
         const role = t.includes('agent')?'agent':'user'
-        setMsgs(p=>[...p.slice(-40),{role,text:ev.data.message,ts:Date.now()}])
-        if (mode!=='music') setMode('conv')
+        setMsgs(p=>[...p.slice(-60),{role,text:ev.data.message,ts:Date.now()}])
+        setShowMode('conv')
         const m = ev.data.message.match(/müzik_iste:(.+)/i)
-        if (m) { setTrack(m[1].trim()); setMode('music') }
+        if (m) { setTrack(m[1].trim()); setShowMode('music') }
       }
     }
     window.addEventListener('message',h)
     return ()=>window.removeEventListener('message',h)
-  },[mode])
+  },[])
 
   const markDone = id => {
     fetch(`${WORKER}/tasks/${id}/status`,{
@@ -142,54 +254,94 @@ export default function App() {
   const sendText = () => {
     if (!textVal.trim()) return
     setMsgs(p=>[...p,{role:'user',text:textVal,ts:Date.now()}])
-    setMode('conv'); setShowText(false); setTextVal('')
+    setShowMode('conv'); setShowText(false); setTextVal('')
   }
 
   const stLabel = {idle:'HAZIR',listening:'DİNLİYOR',speaking:'KONUŞUYOR'}
 
-  // ── Karatahta content ──
-  const renderKB = () => {
-    if (mode === 'tasks') return (
-      <div className="kb-tasks">
-        <div className="kb-tasks-top">
-          <span className="kb-label">📋 GÖREVLER</span>
-          <button className="kb-x" onClick={()=>setMode('idle')}>✕</button>
+  // ── Karatahta render ──────────────────────────────────
+  const renderKaratahta = () => {
+
+    // MUSIC
+    if (showMode === 'music') return (
+      <div className="kb-center">
+        <div className="music-panel">
+          <div className="music-bars-wrap">
+            {[...Array(12)].map((_,i)=>(
+              <div key={i} className="mbar" style={{animationDelay:`${i*0.08}s`,animationDuration:`${0.55+i*0.06}s`}}/>
+            ))}
+          </div>
+          <div className="music-now">ŞU AN ÇALIYOR</div>
+          <div className="music-track">{track}</div>
+          <button className="back-btn" onClick={()=>setShowMode(callState!=='idle'?'conv':'idle')}>← Geri</button>
+        </div>
+      </div>
+    )
+
+    // TASKS
+    if (showMode === 'tasks') return (
+      <div className="kb-tasks-wrap">
+        <div className="kb-tasks-hdr">
+          <span className="kb-lbl">📋 GÖREVLER</span>
+          <button className="kb-x" onClick={()=>setShowMode('idle')}>✕</button>
         </div>
         {tasks.length===0 && <p className="kb-empty">Bekleyen görev yok 🎉</p>}
-        {tasks.map(t=>(
-          <div key={t.id} className="task-item">
-            <button className="task-chk" onClick={()=>markDone(t.id)}>◻</button>
-            <div>
-              <div className="task-n">{t.title}</div>
-              {t.description&&<div className="task-d">{t.description}</div>}
+        <div className="tasks-list">
+          {tasks.map(t=>(
+            <div key={t.id} className="task-item">
+              <button className="task-chk" onClick={()=>markDone(t.id)}>◻</button>
+              <div>
+                <div className="task-n">{t.title}</div>
+                {t.description&&<div className="task-d">{t.description}</div>}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     )
 
-    if (mode === 'music') return (
-      <div className="kb-music">
-        <MusicBars/>
-        <div className="music-track">{track}</div>
-        <div className="music-sub">Windows Agent çalıyor</div>
-        <button className="music-back" onClick={()=>setMode(callState!=='idle'?'conv':'idle')}>← Geri</button>
+    // CONV — chat bubbles + visualizer
+    if (showMode === 'conv') return (
+      <div className="kb-conv">
+        {/* Visualizer area */}
+        <div className="viz-area">
+          {callState === 'listening' && (
+            <div className="viz-block">
+              <canvas ref={userCanvasRef} width={360} height={90} className="viz-canvas"/>
+              <div className="viz-label">DİNLİYOR</div>
+            </div>
+          )}
+          {callState === 'speaking' && (
+            <div className="viz-block">
+              <HenaBars active={true}/>
+              <div className="viz-label hena-label">HENA KONUŞUYOR</div>
+            </div>
+          )}
+          {callState === 'idle' && msgs.length > 0 && (
+            <div className="viz-block">
+              <OrbIdle/>
+            </div>
+          )}
+        </div>
+
+        {/* Chat bubbles */}
+        <div className="bubbles" ref={scrollRef}>
+          {msgs.slice(-12).map((m,i)=><Bubble key={i} msg={m}/>)}
+        </div>
       </div>
     )
 
-    // conv + idle → orb + transcript
+    // IDLE
     return (
-      <div className="kb-main">
-        <Orb state={callState}/>
-        {callState==='idle'&&mode==='idle' && (
-          <p className="idle-hint">Konuşmak için mikrofona dokun</p>
-        )}
-        {msgs.length>0 && (
-          <div className="transcript" ref={transcriptRef}>
-            {msgs.slice(-8).map((m,i)=>(
-              <div key={i} className={`line line-${m.role}`}>
-                <span className="line-who">{m.role==='user'?'SEN':'HENA'}</span>
-                <span className="line-txt">{m.text}</span>
+      <div className="kb-center">
+        <OrbIdle/>
+        <p className="idle-hint">Konuşmak için mikrofona dokun</p>
+        {tasks.length > 0 && (
+          <div className="idle-tasks">
+            {tasks.slice(0,2).map(t=>(
+              <div key={t.id} className="idle-task-row">
+                <span className="idle-task-dot">◻</span>
+                <span className="idle-task-txt">{t.title}</span>
               </div>
             ))}
           </div>
@@ -201,8 +353,8 @@ export default function App() {
   return (
     <>
       <div className="bg"/><div className="grid-bg"/>
-
       <div className="shell">
+
         {/* Header */}
         <header>
           <div className="logo">
@@ -219,9 +371,11 @@ export default function App() {
         </header>
 
         {/* Karatahta */}
-        <main className="karatahta">{renderKB()}</main>
+        <main className="karatahta">
+          {renderKaratahta()}
+        </main>
 
-        {/* Text input bar */}
+        {/* Text input */}
         {showText && (
           <div className="text-bar">
             <input className="text-in" placeholder="HENA'ya yaz..."
@@ -236,7 +390,6 @@ export default function App() {
         <footer>
           <button className={`fb sm ${showText?'fb-on':''}`} onClick={()=>setShowText(v=>!v)}>✏</button>
 
-          {/* KONUŞ — widget overlay inside */}
           <div className={`fb main-btn ${callState!=='idle'?'main-on':''}`}>
             <span className="mic-ico">🎙</span>
             <span className="main-lbl">{callState==='idle'?'KONUŞ':'KAPAT'}</span>
@@ -247,14 +400,14 @@ export default function App() {
             />
           </div>
 
-          <button className={`fb sm ${mode==='tasks'?'fb-on':''}`}
-            onClick={()=>setMode(m=>m==='tasks'?'idle':'tasks')}>📋</button>
+          <button className={`fb sm ${showMode==='tasks'?'fb-on':''}`}
+            onClick={()=>setShowMode(m=>m==='tasks'?'idle':'tasks')}>📋</button>
 
           <button className={`fb sm ${showSet?'fb-on':''}`} onClick={()=>setShowSet(v=>!v)}>⚙</button>
         </footer>
       </div>
 
-      {/* Settings sheet */}
+      {/* Settings */}
       {showSet && (
         <div className="sheet-bg" onClick={e=>e.target===e.currentTarget&&setShowSet(false)}>
           <div className="sheet">
