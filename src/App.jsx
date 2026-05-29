@@ -8,16 +8,22 @@ const AGENT  = 'agent_6401kqkzd0rpehnaspqfd8jwbj7w'
 function useMemory() {
   const [prompt, setPrompt] = useState('')
   useEffect(() => {
-    fetch(`${WORKER}/memory`).then(r => r.json()).then(all => {
+    fetch(`${WORKER}/memory?limit=50`).then(r => r.json()).then(all => {
       if (!Array.isArray(all)) return
-      const f = all.filter(m => ['user_profile','agenda','topic','preference'].includes(m.category))
+      const cats = ['user_profile','agenda','topic','preference','gundem','genel','görev','hatırlatma']
+      const f = all.filter(m => cats.includes(m.category))
       if (!f.length) return
       const g = cat => f.filter(m => m.category === cat)
       let p = '\n\n=== HAFIZA ==='
       if (g('user_profile').length) p += '\nKullanıcı: ' + g('user_profile').map(m=>`${m.key}=${m.summary}`).join(', ')
       if (g('preference').length)   p += '\nTercihler: ' + g('preference').map(m=>`${m.key}=${m.summary}`).join(', ')
-      if (g('agenda').length)       { p += '\nGündem:'; g('agenda').forEach(m => p += `\n- ${m.summary}`) }
-      if (g('topic').length)        { p += '\nKonular:'; g('topic').forEach(m => p += `\n- ${m.key}: ${m.summary}`) }
+      // Son gündem — en kritik, en üste
+      const gundemler = [...g('gundem'), ...g('genel')].slice(0, 5)
+      if (gundemler.length) { p += '\nSon gündem (önemli, bunları bil):'; gundemler.forEach(m => p += `\n- ${m.summary}`) }
+      if (g('hatırlatma').length) { p += '\nHatırlatmalar:'; g('hatırlatma').slice(0,3).forEach(m => p += `\n- ${m.summary}`) }
+      if (g('görev').length)      { p += '\nGörevler:'; g('görev').slice(0,3).forEach(m => p += `\n- ${m.summary}`) }
+      if (g('agenda').length)     { p += '\nAktif gündem:'; g('agenda').forEach(m => p += `\n- ${m.summary}`) }
+      if (g('topic').length)      { p += '\nKonular:'; g('topic').forEach(m => p += `\n- ${m.key}: ${m.summary}`) }
       p += '\n=== HAFIZA SONU ==='; setPrompt(p)
     }).catch(() => {})
   }, [])
